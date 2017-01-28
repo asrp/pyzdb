@@ -14,12 +14,7 @@ Install with
 
     pip install -r requirements.txt
 
-[undoable](https://github.com/asrp/undoable) has to be downloaded manually and added to your python path for the moment.
-
-    git clone https://github.com/asrp/undoable
-    export PYTHONPATH=$PYTHONPATH:`pwd`/undoable
-
-(Alternatively, copy `undoable.py` to where the rest of pydb's source is.)
+Note that undoable is not yet on PyPI and is installed using the `-e` flag. Alternatively, it can be downloaded manually and put in the same directory as `server.py` and `client.py`.
 
 ## Running
 

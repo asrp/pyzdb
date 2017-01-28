@@ -1,2 +1,2 @@
 pyzmq
-#undoable
+-e git://github.com/asrp/undoable#egg=undoable
