@@ -1,10 +1,12 @@
-# pydb - a lightweight database with Python syntax queries, using ZeroMQ
+# pyzdb - a lightweight database with Python syntax queries, using ZeroMQ
 
-pydb is a database for storing nested `list` and `dict` and allows Python syntax queries instead of some variation of SQL. A deliberate choice is made to make no optimization on the queries so you know exactly what paths queries take.
+**Please note this project's name change from pydb to pyzdb.**
+
+pyzdb ("pies db") is a database for storing nested `list` and `dict` and allows Python syntax queries instead of some variation of SQL. A deliberate choice is made to make no optimization on the queries so you know exactly what paths queries take.
 
 ## Installation
 
-pydb depends on
+pyzdb depends on
 
 - [pyzmq](https://github.com/zeromq/pyzmq)
 - [undoable](https://github.com/asrp/undoable)
@@ -65,7 +67,7 @@ to get a prompt to access the database
 
 The server can be stopped and restarted to continue the session (without needing to restart the client). The most common use in an application is to import and use the client while the server is still run the same way.
 
-    from pydb.client import client
+    from pyzdb.client import client
     db, socket = client()
     db['x'] = 3
     x = db['x']._run()
@@ -75,7 +77,7 @@ The server can be stopped and restarted to continue the session (without needing
 
 ### `lock` example
 
-    from pydb.client import client
+    from pyzdb.client import client
     db, socket = client()
     db.lock()
     x = db['x']._run()
