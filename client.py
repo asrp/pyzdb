@@ -33,7 +33,8 @@ class Caller(object):
     def __contains__(self, *args, **kwargs):
         return self._run("__contains__", args, kwargs) == "True"
 
-    def _run(self, func=None, args=(), kwargs={}):
+    def _run(self, func=None, args=(), kwargs=None):
+        kwargs = kwargs if kwargs is not None else {}
         logging.debug("Running %s %s %s on %s", func,
                       args, kwargs, self.prefix)
         message = json.dumps({"mode": "run",
