@@ -27,6 +27,7 @@ class Database(observed_dict):
             # Hack! Need to debug.
             output = pickle.load(open(filename))
             output.undolog.undoroot = output.undolog.root
+            output.timestamp = os.stat(filename).st_mtime
             return output
         else:
             return Database(filename, *args, **kwargs)
@@ -38,6 +39,7 @@ class Database(observed_dict):
         self.undolog.add(self)
         self.filename = filename
         self.bigfiledir = bigfiledir
+        self.timestamp = 0
 
     def save(self):
         #acquire_lock(self.filename + ".lock", "exclusive")
@@ -70,30 +72,42 @@ class Database(observed_dict):
     def redo(self):
         self.undolog.redo()
 
+def router_dealer(client_uri, internal_uri):
+    pd = ProcessDevice(zmq.QUEUE, zmq.ROUTER, zmq.DEALER)
+    pd.bind_in(client_uri)
+    pd.bind_out(internal_uri)
+    pd.setsockopt_in(zmq.IDENTITY, 'ROUTER')
+    pd.setsockopt_out(zmq.IDENTITY, 'DEALER')
+    return pd
+
 class Server(object):
-    def __init__(self, db, client_uri, internal_uri, lock_uri):
+    def __init__(self, db, client_uri, internal_uri, lock_uri, read_only=False):
         self.client_uri = client_uri
         self.internal_uri = internal_uri
         self.rep_uri = internal_uri.replace("*", "localhost")
         self.lock_uri = lock_uri
+        self.auto_reload = zmq.NONBLOCK if read_only else 0
         self.db = db
-        self.pd = ProcessDevice(zmq.QUEUE, zmq.ROUTER, zmq.DEALER)
-        self.pd.bind_in(self.client_uri)
-        self.pd.bind_out(self.internal_uri)
-        self.pd.setsockopt_in(zmq.IDENTITY, 'ROUTER')
-        self.pd.setsockopt_out(zmq.IDENTITY, 'DEALER')
         self.running = False
 
     def start(self):
-        self.pd.start()
         self.context = zmq.Context()
         self.socket = self.context.socket(zmq.REP)
         self.socket.connect(self.rep_uri)
 
+    def reload_db(self, filename=None):
+        filename = filename if filename is not None else self.db.filename
+        if not os.path.isfile(filename) or self.db.timestamp < os.stat(filename).st_mtime:
+            logging.debug("Reloading database from %s", filename)
+            self.db = Database.load(filename)
+
     def run(self):
         self.running = True
         while self.running:
-            message = self.socket.recv()
+            try:
+                message = self.socket.recv(self.auto_reload)
+            except ZMQError as e:
+                self.reload_db()
             logging.debug("Received request: %s" % message)
             try:
                 message = json.loads(message)
@@ -163,6 +177,8 @@ if __name__ == "__main__":
     db = Database.load(args.db_filename)
     logging.info("Starting server: client_uri=%s internal_uri=%s lock_uri=%s"
                  % (args.client_uri, args.internal_uri, args.lock_uri))
+    router = router_dealer(args.client_uri, args.internal_uri)
     server = Server(db, args.client_uri, args.internal_uri, args.lock_uri)
+    router.start()
     server.start()
     server.run()
