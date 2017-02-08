@@ -14,4 +14,4 @@ class File(object):
             filename = os.path.basename(location)
         self.filename = filename
 
-readonly = ["__getitem__", "__iter__", "__len__", "__contains__", "keys", "items", "values", "get", "__eq__", "__ne__"]
+read_only = [None, "__getitem__", "__iter__", "__len__", "__contains__", "keys", "items", "values", "get", "__eq__", "__ne__"]

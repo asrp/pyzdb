@@ -72,21 +72,21 @@ class Database(observed_dict):
     def redo(self):
         self.undolog.redo()
 
-def router_dealer(client_uri, internal_uri):
+def router_dealer(client_uri, server_uri, prefix='write'):
     pd = ProcessDevice(zmq.QUEUE, zmq.ROUTER, zmq.DEALER)
     pd.bind_in(client_uri)
-    pd.bind_out(internal_uri)
-    pd.setsockopt_in(zmq.IDENTITY, 'ROUTER')
-    pd.setsockopt_out(zmq.IDENTITY, 'DEALER')
+    pd.bind_out(server_uri)
+    pd.setsockopt_in(zmq.IDENTITY, '%s-router' % prefix)
+    pd.setsockopt_out(zmq.IDENTITY, '%s-dealer' % prefix)
     return pd
 
 class Server(object):
-    def __init__(self, db, client_uri, internal_uri, lock_uri, read_only=False):
-        self.client_uri = client_uri
-        self.internal_uri = internal_uri
-        self.rep_uri = internal_uri.replace("*", "localhost")
+    def __init__(self, db, server_uri, lock_uri=None, read_only=False):
+        self.server_uri = server_uri
+        self.rep_uri = server_uri.replace("*", "localhost")
         self.lock_uri = lock_uri
-        self.auto_reload = zmq.NONBLOCK if read_only else 0
+        self.auto_reload = zmq.NOBLOCK if read_only else 0
+        self.read_only = read_only
         self.db = db
         self.running = False
 
@@ -98,7 +98,9 @@ class Server(object):
     def reload_db(self, filename=None):
         filename = filename if filename is not None else self.db.filename
         if not os.path.isfile(filename) or self.db.timestamp < os.stat(filename).st_mtime:
-            logging.debug("Reloading database from %s", filename)
+            if os.path.isfile(filename):
+                logging.debug("Reloading database from %s", filename)
+                logging.debug("Timestamps old=%s new=%s", self.db.timestamp, os.stat(filename).st_mtime)
             self.db = Database.load(filename)
 
     def run(self):
@@ -106,8 +108,10 @@ class Server(object):
         while self.running:
             try:
                 message = self.socket.recv(self.auto_reload)
-            except ZMQError as e:
+            except zmq.ZMQError as e:
                 self.reload_db()
+                time.sleep(0.1)
+                continue
             logging.debug("Received request: %s" % message)
             try:
                 message = json.loads(message)
@@ -126,8 +130,10 @@ class Server(object):
                 elif message["mode"] == "readall":
                     output = db
                 elif message["mode"] == "lock":
+                    assert(not self.read_only)
                     output = {"locked": True, "uri": self.lock_uri}
                 elif message["mode"] == "unlock":
+                    assert(not self.read_only)
                     output = {"locked": False}
                 else:
                     entry = self.db
@@ -164,9 +170,12 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("db_filename", default="/tmp/db.pkl", nargs='?')
-    parser.add_argument("client_uri", default="tcp://*:5559", nargs='?')
-    parser.add_argument("internal_uri", default="tcp://*:5560", nargs='?')
-    parser.add_argument("lock_uri", default="tcp://*:5558", nargs='?')
+    parser.add_argument("write_client_uri", default="tcp://*:5559", nargs='?')
+    parser.add_argument("write_server_uri", default="tcp://*:5560", nargs='?')
+    parser.add_argument("read_client_uri", default="tcp://*:5561", nargs='?')
+    parser.add_argument("read_server_uri", default="tcp://*:5562", nargs='?')
+    parser.add_argument("lock_uri", default="tcp://localhost:5558", nargs='?')
+    parser.add_argument("-ro", "--read-only", action="store_true")
     parser.add_argument("-v", "--verbosity", action="count", default=0)
     args = parser.parse_args()
     if args.verbosity == 1:
@@ -175,10 +184,14 @@ if __name__ == "__main__":
         logging.basicConfig(level=logging.DEBUG)
 
     db = Database.load(args.db_filename)
-    logging.info("Starting server: client_uri=%s internal_uri=%s lock_uri=%s"
-                 % (args.client_uri, args.internal_uri, args.lock_uri))
-    router = router_dealer(args.client_uri, args.internal_uri)
-    server = Server(db, args.client_uri, args.internal_uri, args.lock_uri)
-    router.start()
+    logging.info("Starting server: %s", args)
+    if args.read_only:
+        server = Server(db, args.read_server_uri, read_only=True)
+    else:
+        write_router = router_dealer(args.write_client_uri, args.write_server_uri)
+        read_router = router_dealer(args.read_client_uri, args.read_server_uri)
+        server = Server(db, args.write_server_uri, args.lock_uri)
+        write_router.start()
+        read_router.start()
     server.start()
     server.run()
