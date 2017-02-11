@@ -86,15 +86,60 @@ The server can be stopped and restarted to continue the session (without needing
 
 (or simply `db['x'] = db['x']._run() + 1` but this will also run *two* queries instead of one.)
 
+### Multiple read-only servers example
+
+In one terminal
+
+	python server.py
+
+In a second terminal
+
+	python server.py -ro
+
+In a third terminal
+
+    python client.py tcp://localhost:5559 tcp://localhost:5561
+
+And proceed as previous examples.
+
+`tcp://localhost:5559` is the read-write URI and `tcp://localhost:5561` is the read-only URI.
+
+Note that all reads gets data from some consistent version of the database that's not necessarily the latest version so something like this from the client is possible.
+
+    > db['x'] = 3
+    None
+    > db.save()
+    None
+    > db['x'] = 4
+    None
+    > db.save()
+    None
+    > db['x']
+    3
+
+If no parameters are passed to `client.py` or only a single parameter (the read-write URI), the client will only connect to the read-write server. This is the intended method for using only one database server.
+
 ## Intended use
 
-A single instance of the database server with any number of clients (for example a web server) running on the same machine. The total database size isn't too large and large chunks are stored externally in files and represented by `File` objects in the database. Some thought was put towards making it possible to have these on separate machines or to have multiple database servers (see below).
+One intended use is a single instance of the database server with any number of clients (for example a web server) running on the same machine. The total database size isn't too large and large chunks are stored externally in files and represented by `File` objects in the database.
+
+Another possibility is to have a single read-write server with multiple read-only server. The read-only server reload the database from the filesystem so to update them, update the database file.
 
 ## Architecture
 
-`server.py` starts a queued router-dealer server and a reply (`zmq.REP`) server. The router-dealer serializes (and queues) incoming requests and sends one request at a time to the reply server. The reply server handles the request and answers the client (of that request).
+![Architecture](https://asrp.github.io/blog/multi-write-architecture.svg)
+
+`server.py` (with no arguments) starts
+
+- one queued router-dealer for read-only servers
+- one queued router-dealer for a read-write server
+- a read-write reply (`zmq.REP`) server.
+
+The router-dealers serializes (and queues) incoming requests and sends one request at a time to the reply server of the right type. The reply server handles the request and answers the client (of that request).
 
 All messages are encoded in JSON.
+
+[This post discusses choices when multiple read-only servers were added](https://asrp.github.io/blog/pyzdb_multiple_read.html).
 
 ## Debugging
 
@@ -149,7 +194,7 @@ Large files are "transfered" using a `File("/path/to/file")` object. The file ne
 
 ### Multiple database servers
 
-The database's architecture makes provisions for having multiple read-only servers and one read-write server but it is not yet implemented
+Its now possible to have multiple read-only servers and one read-write server.
 
 The read-only servers should reload the database from disk periodically (with the database file made available to them through some other means like a network filesystem or simply copying). No system for sending just the changes are available out of the box.
 
@@ -159,9 +204,10 @@ There is no authentication mechanism. The intended usage is to have appropriate 
 
 ## Discussion
 
-I might write more if there's request for it.
+[Here is a discussion about adding multiple read-only servers](https://asrp.github.io/blog/pyzdb_multiple_read.html)
 
 ## Other similar projects
 
 - [Tinydb](https://github.com/msiemens/tinydb)
 - [Python's shelve](https://docs.python.org/2/library/shelve.html)
+- [Blitzdb](https://github.com/adewes/blitzdb)
